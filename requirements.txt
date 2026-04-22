@@ -3,3 +3,5 @@ numpy
 scikit-fuzzy
 pandas
 requests
+scipy
+networkx
