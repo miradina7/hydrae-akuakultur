@@ -36,9 +36,11 @@ def go_to_dashboard(farm_name, location, sys_type, water_type):
     }
     st.session_state.current_page = "dashboard"
 
+# NEW PROFESSIONAL LOGOUT: Forces instant redirect to login screen
 def logout():
     st.session_state.current_page = "login"
     st.session_state.farm_profile = {}
+    st.rerun()
 
 # --- 3. SCREEN 1: LOGIN ---
 if st.session_state.current_page == "login":
@@ -125,7 +127,7 @@ elif st.session_state.current_page == "dashboard":
         st.title(f"💧 {st.session_state.farm_profile['name']}")
         st.write(f"📍 {st.session_state.farm_profile['location']} | {st.session_state.farm_profile['system']} ({st.session_state.farm_profile['water']})")
     with col_out:
-        if st.button("Log Out"): logout()
+        if st.button("Log Out"): logout() # Now instantly redirects
 
     st.write("---")
 
@@ -204,7 +206,7 @@ elif st.session_state.current_page == "dashboard":
             st.success("Reading saved to your farm database!")
 
     # -----------------------------------------
-    # TAB 2: FARM REPORTS 
+    # TAB 2: FARM REPORTS (PROFESSIONALLY UPGRADED)
     # -----------------------------------------
     with tab_report:
         st.subheader("📑 Farm Systems Analytics")
@@ -213,38 +215,81 @@ elif st.session_state.current_page == "dashboard":
         if os.path.exists("farm_log.csv"):
             df = pd.read_csv("farm_log.csv")
             if not df.empty:
-                st.write("**📈 Parameter Trend Graph**")
-                st.line_chart(df[['Temp (°C)', 'DO (mg/L)', 'Ammonia (ppm)']])
+                # Convert Date/Time string to actual Datetime object for filtering
+                df['Date/Time'] = pd.to_datetime(df['Date/Time'])
                 
-                st.write("**🗄️ Raw Data Logs**")
-                st.dataframe(df, use_container_width=True)
+                # Setup Date Filters
+                st.markdown("##### 📅 Filter Data by Date")
+                min_date = df['Date/Time'].dt.date.min()
+                max_date = df['Date/Time'].dt.date.max()
                 
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Export Database to CSV", data=csv, file_name="Hydrae_Reports.csv", mime="text/csv", use_container_width=True)
+                c1, c2 = st.columns(2)
+                with c1: start_date = st.date_input("Start Date", min_date, min_value=min_date, max_value=max_date)
+                with c2: end_date = st.date_input("End Date", max_date, min_value=min_date, max_value=max_date)
+                
+                # Apply the filter mask
+                mask = (df['Date/Time'].dt.date >= start_date) & (df['Date/Time'].dt.date <= end_date)
+                filtered_df = df.loc[mask]
+                
+                if not filtered_df.empty:
+                    # Show averages for the selected timeframe
+                    st.markdown("##### 📊 Averages for Selected Timeframe")
+                    a1, a2 = st.columns(2)
+                    a1.metric("Avg Temperature", f"{filtered_df['Temp (°C)'].mean():.1f} °C")
+                    a2.metric("Avg Ammonia", f"{filtered_df['Ammonia (ppm)'].mean():.3f} ppm")
+                    
+                    st.write("**📈 Parameter Trend Graph**")
+                    # Set the index to Date/Time so the graph x-axis formats cleanly
+                    chart_data = filtered_df.set_index("Date/Time")[['Temp (°C)', 'DO (mg/L)', 'Ammonia (ppm)']]
+                    st.line_chart(chart_data)
+                    
+                    st.write("**🗄️ Raw Data Logs**")
+                    # Revert Date/Time to string for clean table viewing
+                    display_df = filtered_df.copy()
+                    display_df['Date/Time'] = display_df['Date/Time'].dt.strftime("%Y-%m-%d %H:%M:%S")
+                    st.dataframe(display_df, use_container_width=True)
+                    
+                    csv = display_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Export Database to CSV", data=csv, file_name=f"Hydrae_Reports_{start_date}_to_{end_date}.csv", mime="text/csv", use_container_width=True)
+                else:
+                    st.warning("No data found for the selected date range.")
             else:
                 st.info("No data logged yet. Take a reading in the Dashboard to see reports.")
         else:
             st.info("No data logged yet. Take a reading in the Dashboard to see reports.")
 
-    # -----------------------------------------
-    # TAB 3: NOTIFICATIONS 
+  # -----------------------------------------
+    # TAB 3: NOTIFICATIONS (CLEAN & PROFESSIONAL)
     # -----------------------------------------
     with tab_notif:
-        st.subheader("🔔 System Alerts & Notifications")
+        st.subheader("🔔 System Alerts")
         
         if os.path.exists("farm_log.csv"):
             df = pd.read_csv("farm_log.csv")
+            # Filter for only Warnings and Critical alerts
             alerts_df = df[df['DSS Status'].str.contains("WARNING|CRITICAL", na=False)]
             
             if alerts_df.empty:
                 st.success("🎉 All clear! No critical alerts or warnings recorded in the system.")
             else:
-                st.write("Recent system triggers requiring attention:")
-                for index, row in alerts_df.iloc[::-1].iterrows():
+                st.write("Showing the **5 most recent** system triggers:")
+                
+                # MAGIC TRICK: Grab only the last 5 rows, and reverse them (newest first)
+                recent_alerts = alerts_df.tail(5).iloc[::-1]
+                
+                for index, row in recent_alerts.iterrows():
+                    # Flattened into one clean line so it isn't "serabut"
+                    alert_text = f"**{row['Date/Time']}** | {row['DSS Status']} (Risk: {row['Risk Score (%)']}%)"
+                    
                     if "CRITICAL" in row['DSS Status']:
-                        st.error(f"🚨 **{row['Date/Time']}**\n\n{row['DSS Status']} | Risk Score: {row['Risk Score (%)']}%")
+                        st.error(alert_text, icon="🚨")
                     elif "WARNING" in row['DSS Status']:
-                        st.warning(f"⚠️ **{row['Date/Time']}**\n\n{row['DSS Status']} | Risk Score: {row['Risk Score (%)']}%")
+                        st.warning(alert_text, icon="⚠️")
+                
+                # Let the user know if there are older alerts hidden away
+                hidden_count = len(alerts_df) - 5
+                if hidden_count > 0:
+                    st.info(f"💡 {hidden_count} older alerts are hidden. Check the **Farm Reports** tab for your full history.")
         else:
             st.info("No system activity recorded yet.")
 
